@@ -1,0 +1,2 @@
+# Optional: OCR + table-aware parsing for scanned PDFs (large download)
+docling>=2.0
