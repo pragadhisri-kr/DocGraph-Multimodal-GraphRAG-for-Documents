@@ -1,95 +1,290 @@
-# DocGraph-Multimodal-GraphRAG-for-Documents
-A knowledge-graph based Retrieval-Augmented Generation (RAG) system that turns PDF documents into a Neo4j knowledge graph and answers questions with page-cited, chunk-grounded answers.
-Standard RAG ranks isolated text chunks by vector similarity, so it struggles with questions that need facts spread across several passages or relationships between entities. DocGraph represents a document as a graph of entities and relationships, so retrieval can follow links between facts instead of relying on similarity alone.
-# Features
-1.PDF ingestion – page-by-page text extraction with PyMuPDF
-2.Provenance-aware chunking – sliding window (1,500 chars, 250 overlap); every chunk keeps document, page and character span
-3.LLM entity & relation extraction – Google Gemini returns typed entities (Technology, Person, Organization, Concept, Metric) and relationships as schema-constrained JSON, processed in parallel (4 workers)
-4.Entity deduplication – a GraphAccumulator merges entities by canonical key (idempotent Cypher MERGE upserts)
-5.Graph retrieval – seed entities → 1–2 hop Cypher traversal → keyword fallback over chunk nodes
-6.Grounded answers – the model answers only from retrieved chunks and cites the exact page
-7.Dashboard – interactive graph view with entity-type filter, chunk browser, GraphRAG Q&A panel, and a FastAPI & Cypher tab
-# Architecture
-Browser (DocGraph dashboard: Graph & Q&A | Chunks | FastAPI & Cypher)
-        │  REST
-        ▼
-Back end: PDF parser + chunker → Gemini extractor → GraphAccumulator → Retrieval engine
-        │                                   │
-        ▼                                   ▼
-Neo4j (Document, Chunk, Entity)       Google Gemini API
+# pdf-graphrag
 
-# Indexing: PDF → page text → overlapping chunks → entities & relations (Gemini) → deduplicate → store in Neo4j
+An end-to-end pipeline for extracting insights from documents. Ingests PDFs, builds a knowledge graph, and enables intelligent querying via GraphRAG.
 
-# Query: question → seed entities → 1–2 hop Cypher traversal → linked chunks → grounded answer with page citations
+## Current Status
 
-# Graph schema
-Node	                          Content
-Document	                    file name, page count
-Chunk                 	chunk_id, text, page, character span
-Entity                 	name, type, aliases, doc_ids, pages, canonical_key
-Edge	                                  Meaning
-MENTIONED_IN	                    entity appears in a chunk (provenance for citations)
-Entity–entity relations          	typed relationships extracted by the LLM
-Document–Chunk	                  chunk belongs to a document
-# Tech stack
-Layer                                    	Technology
-Language	                          Python, JavaScript/TypeScript
-PDF parsing                       	PyMuPDF
-LLM                               	Google Gemini (structured JSON output)
-Graph database                     	Neo4j (Bolt) + Cypher
-Back end                          	FastAPI, Express REST routes
-Config	                            pydantic-settings (.env)
-# REST API
-Method & route                            	Purpose
-GET /api/health                           	service status, storage mode, whether the Gemini key is                                             configured
-GET /api/documents                        	list indexed documents
-GET /api/documents/:docId/chunks           	list chunks of one document (or all)
-DELETE /api/documents/:docId	              delete a document and its chunks
-# Getting started
-1.Install and start Neo4j (default Bolt URI bolt://localhost:7687).
-2.Create a .env file:
-env
-GEMINI_API_KEY=your_key_here
-GEMINI_MODEL=your_gemini_model
-NEO4J_URI=bolt://localhost:7687
-NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=your_password
-NEO4J_DATABASE=neo4j
-DEFAULT_CHUNK_CHARS=1500
-DEFAULT_CHUNK_OVERLAP=250
-EXTRACTION_MAX_WORKERS=4
-Install dependencies and start the back end and the dashboard:
-bash
-# TODO: replace with your actual commands
+**Phase 1 Complete**: PDF parsing and chunking  
+**Phase 2 Complete**: LLM-based entity and relationship extraction  
+**Phase 3 Complete**: Neo4j ingestion and GraphRAG
+
+## Architecture
+
+```
+pdf-graphrag/
+├── backend/               # FastAPI application
+│   ├── api/              # API endpoints (/upload, /chat, /graph)
+│   └── services/         # Core logic
+│       ├── parser.py     # PDF parsing with Docling
+│       ├── pipeline.py   # Main orchestration
+│       ├── llm_client.py # Ollama LLM integration
+│       ├── neo4j_service.py  # Neo4j operations
+│       └── graphrag.py   # GraphRAG query engine
+├── frontend/             # React application (Vite)
+│   └── src/components/   # UI components (including graph visualization)
+├── docker-compose.yml    # Neo4j local setup
+└── requirements.txt      # Dependencies
+```
+
+## Prerequisites
+
+- **Python 3.10+**
+- **Node.js 16+** & **npm**
+- **Docker** (for Neo4j)
+- **Ollama** (for local LLM) — or access to ASU Sol Supercomputer
+
+## 📦 Installation (Local Machine)
+
+### 1. Clone the Repository
+```bash
+git clone <repository-url>
+cd pdf-graphrag
+```
+
+### 2. Backend Setup
+The backend is built with FastAPI and handles PDF processing.
+
+```bash
+# Create a virtual environment
+python3 -m venv venv
+
+# Activate the virtual environment
+# On macOS/Linux:
+source venv/bin/activate
+# On Windows:
+# venv\Scripts\activate
+
+# Install dependencies
 pip install -r requirements.txt
-# start the back end
-# start the dashboard
-Open the dashboard, drop a PDF (or click Load Sample Technical PDF), check the Chunks tab, then ask questions in the GraphRAG Q&A panel.
+```
 
-Never commit your .env file or API keys.
+### 3. Ollama Setup (Local Machine)
+```bash
+# Install Ollama from https://ollama.ai
+# Then pull the model
+ollama pull gemma3:12b
+```
 
-# Results
+> **💡 Tip for Local Users:** If you're running locally with limited resources, you can use a lighter model. Simply replace the model name in `llm_client.py` and pull it:
+> ```bash
+> ollama pull gemma3:1b   # Lightest option
+> ollama pull gemma3:4b   # Balanced option
+> ollama pull llama3.2    # Alternative lightweight model available in 1b or 3b parameters
+> ```
 
-Evaluated by inspecting the indexed output (no accuracy benchmark against a baseline has been run yet):
+### 4. Frontend Setup
+The frontend is a React application using Vite.
 
-Measure	Value
-Pages → chunks (test PDF)	17 → 17
-Entities in knowledge graph	34
-Relationships	25
-Technology / Concept / Metric / Person / Organization	15 / 13 / 3 / 2 / 1
-# Limitations
-Charts, figures and image-only slides are not read yet; only extractable text is indexed (slides with only charts produced almost no text).
-No benchmark of answer accuracy or latency against plain RAG yet.
-Relations are extracted per chunk, so the graph has several small disconnected clusters.
-Extraction depends on the LLM and an API key.
+```bash
+cd frontend
+npm install
+```
 
-# Roadmap
-[1] Multimodal extraction – vision-language model / OCR for charts, tables and images, stored as graph nodes
-[2] Cross-page entity linking – merge similar entities and extract relations over neighbouring chunks
-[3] Evaluation – question set comparing accuracy, faithfulness and latency vs. plain text RAG
-[4] Hybrid retrieval – vector embeddings alongside graph traversal and community summaries
-[5] Platform features – multi-user support, authentication, Word/PowerPoint input
-[6] Docker setup for one-command deployment
-References
+---
 
-Lewis et al., Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks (2020) · Edge et al., From Local to Global: A Graph RAG Approach to Query-Focused Summarization (2024) · Neo4j / Cypher documentation.
+## 🖥️ ASU Sol Supercomputer Setup
+
+This section provides detailed instructions for running pdf-graphrag on the **ASU Sol Supercomputer**.
+
+### Prerequisites
+- Access to ASU Sol supercomputer (request at [ASU Research Computing](https://cores.research.asu.edu/research-computing/getting-started))
+- Your ASURITE login credentials
+
+### Step 1: Initial Environment Setup (One-Time, on Login Node)
+
+Connect to Sol via SSH or VS Code Remote, then run these commands on the **login node**:
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/Arvikj/pdf-graphrag.git
+cd pdf-graphrag
+
+# 2. Load Mamba (Python environment manager)
+module load mamba/latest
+
+# 3. Create the Python environment
+mamba create -n graphrag_env -c conda-forge python=3.10 -y
+
+# 4. Activate the environment and install dependencies
+source activate graphrag_env
+pip install -r requirements.txt
+```
+
+### Step 2: Download the Model (One-Time, on Compute Node)
+
+**⚠️ Important:** You cannot run Ollama on the login node. You must start an interactive GPU session.
+
+```bash
+# 1. Start an interactive session with 1 GPU (1 hour)
+interactive -G 1 -t 0-1:00
+
+# --- WAIT for the prompt to change (e.g., [yourname@sg...]) ---
+
+# 2. Set your HOME path (replace 'yourname' with your ASURITE)
+export HOME=/home/yourname
+export OLLAMA_MODELS=/home/yourname/ollama-models
+
+# 3. Load CUDA and Ollama modules
+module load cuda-12.4.1-gcc-12.1.0
+module load ollama/0.12.10
+
+# 4. Start the Ollama server
+ollama-start
+sleep 5
+
+# 5. Pull the model
+ollama pull gemma3:12b
+
+# 6. Verify GPU/CUDA is working (optional)
+ollama run gemma3:12b "Hello, are you working?"
+# Type /bye to exit the chat
+
+# 7. Stop Ollama to exit the session
+ollama-stop
+exit
+```
+
+### Step 3: Running the Pipeline (Interactive Mode)
+
+For running the pipeline interactively:
+
+```bash
+# 1. Start an interactive GPU session
+interactive -G 1 -t 0-2:00
+
+# 2. Load all required modules
+module load mamba/latest
+module load cuda-12.4.1-gcc-12.1.0
+module load ollama/0.12.10
+
+# 3. Activate your environment
+source activate graphrag_env
+
+# 4. Set environment variables (replace 'yourname' with your ASURITE)
+export HOME=/home/yourname
+export OLLAMA_MODELS=/home/yourname/ollama-models
+
+# 5. Start Ollama server
+ollama-start
+sleep 5
+
+# 6. Run the pipeline
+cd ~/pdf-graphrag
+python pipeline.py
+
+# 7. When done, cleanup
+ollama-stop
+exit
+```
+
+### Using Lighter Models on Sol
+
+If you want to use a lighter model (faster inference, less GPU memory), pull a lighter model during your interactive session:
+
+```bash
+ollama pull gemma3:1b   # ~1GB, fastest
+ollama pull gemma3:4b   # ~4GB, balanced
+ollama pull llama3.2    # Alternative option
+```
+
+Then update `llm_client.py` to use your chosen model, or modify `pipeline.py`:
+```python
+MODEL = "gemma3:4b"  # Change from "gemma3:12b"
+```
+
+---
+
+## 🏃‍♂️ Running the Application
+
+You need to run **Neo4j**, **Backend**, and **Frontend** in three separate terminal windows.
+
+### Terminal 1: Neo4j (Docker)
+```bash
+# Start Neo4j using Docker Compose
+docker-compose up -d
+
+# Neo4j Browser available at: http://localhost:7474
+# Default credentials: neo4j / password123
+```
+
+### Terminal 2: Backend
+```bash
+# Make sure you are in the root directory and venv is activated
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+uvicorn backend.main:app --reload --port 8000
+```
+*The backend will start at `http://localhost:8000`*
+
+### Terminal 3: Frontend
+```bash
+cd frontend
+npm run dev
+```
+*The frontend will start at `http://localhost:5173`*
+
+## Usage
+
+### Via Web Interface
+1. Open your browser and go to **http://localhost:5173**
+2. **Upload**: Drag & drop a PDF file into the upload zone
+3. **Process**: Watch the status stepper as the backend parses your file
+4. **Chat**: Once "Ready!", type a question to interact with the document (uses GraphRAG)
+5. **Graph**: Click "Knowledge Graph" in the sidebar to view the interactive visualization
+
+### Via Command Line
+```bash
+python pipeline.py
+```
+
+This will:
+1. Parse the PDF using Docling (with OCR and table structure recognition)
+2. Chunk the document using HybridChunker
+3. Extract entities and relationships from each chunk using the local LLM
+4. Save the graph data to `results/graph_data.json`
+
+### Configuration
+
+Edit `pipeline.py` to customize:
+- `INPUT_PDF`: Path to your PDF file
+- `MODEL`: Ollama model to use (default: `gemma3:12b`)
+
+## Output Format
+
+The pipeline generates `results/graph_data.json` with this structure:
+
+```json
+{
+  "nodes": [
+    {
+      "id": "unique_id",
+      "label": "EntityType",
+      "properties": {"key": "value"}
+    }
+  ],
+  "relationships": [
+    {
+      "source_id": "node_id_1",
+      "target_id": "node_id_2",
+      "type": "RELATIONSHIP_TYPE",
+      "properties": {"key": "value"}
+    }
+  ]
+}
+```
+
+This format is ready for Neo4j ingestion.
+
+## Dependencies
+
+- **docling** (v2.62.0): PDF parsing with AI models
+- **transformers**: Required for HybridChunker tokenization
+- **ollama**: Local LLM client (Python v0.6.1, Ollama v0.13.0)
+- **pydantic**: Data validation and schema enforcement
+- **fastapi**: Web API framework
+- **uvicorn**: ASGI server
+
+## Notes
+
+- Tested with gemma3:12b on ASU Sol supercomputer (A100 GPU)
+- Code follows official Docling and Ollama documentation
+- Current main branch configured and rewritten to support Gemini models via an api key for demo purposes, for the version with a purely local, ollama based implemntation refer to the `phase3-chat-alt` branch.
